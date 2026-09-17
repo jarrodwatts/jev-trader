@@ -1,5 +1,6 @@
 const env = (key: string, fallback?: string) => process.env[key] ?? fallback;
 const num = (key: string) => (env(key) ? Number(env(key)) : undefined);
+const bool = (key: string) => env(key) === "true";
 
 export const config = {
   rpcUrl: env("RPC_URL", "https://rpc.monad.xyz")!, // sends, receipts, nonce, gas estimation
@@ -31,6 +32,37 @@ export const config = {
   model: env("MODEL", "mock") as "mock" | "jev",
   jevModelId: env("JEV_MODEL_ID", "jev-latest")!,
   jevUsdPerMTok: 0.042,
+  /**
+   * Opt-in trade limiter (`src/risk.ts`). Off by default: the demo is meant to post on every block,
+   * so a budget that trips would be the demo stopping. Every field is a no-op until RISK_ENABLED=true.
+   */
+  risk: {
+    enabled: bool("RISK_ENABLED"),
+    /** Monad charges the LIMIT, so per-block cost is gasLimit x (base+priority) whether it lands or reverts. */
+    maxGasMonPerHour: Number(env("RISK_MAX_GAS_MON_PER_HOUR", "100")),
+    maxTotalGasMon: Number(env("RISK_MAX_GAS_MON", "2000")),
+    maxLossUsd: Number(env("RISK_MAX_LOSS_USD", "50")),
+    /** Stop when this share of the last `revertWindow` quotes reverted (the book moved through the price). */
+    maxRevertPct: Number(env("RISK_MAX_REVERT_PCT", "60")),
+    revertWindow: Number(env("RISK_REVERT_WINDOW", "200")),
+    /** Blocks in a row with no decision (the model could not keep up with 300 ms) before stopping. */
+    maxLateStreak: Number(env("RISK_MAX_LATE_STREAK", "60")),
+    pauseMinutes: Number(env("RISK_PAUSE_MINUTES", "30")),
+    /**
+     * Minimum edge a quote must have, in bps of notional, before it is worth a block's gas.
+     * 0 = require the quote to pay for its own gas; negative = do not check.
+     */
+    minEdgeBps: Number(env("RISK_MIN_EDGE_BPS", "0")),
+    /**
+     * When the position cap blocks the model's side: false = stand down for that block, true = take the
+     * other side. Leave unset for the default, which follows the layer: stand down while it is on (at the
+     * cap, do not trade against the model) and take the other side while it is off, as the demo does.
+     */
+    allowCounterTrade: env("RISK_ALLOW_COUNTER_TRADE") === undefined ? undefined : bool("RISK_ALLOW_COUNTER_TRADE"),
+    /** Safety ceiling for a startup gas estimate; the env GAS_LIMIT override is never clamped. */
+    estimateGasLimitCeiling: Number(env("RISK_ESTIMATE_GAS_CEILING", "1000000")),
+    stateFile: env("RISK_STATE_FILE", "data/risk.json")!,
+  },
   port: Number(env("PORT", "3000")),
   historySize: 1000,
 };

@@ -165,7 +165,8 @@ export class Market {
       } else if (block - p.block >= config.pendingBlocks) {
         this.pending.delete(hash);
         lost = true;
-        out.push({ block: p.block, quote: { ...p.quote, status: "lost", gasMon: 0 }, canceled: [] });
+        // Keep the intent fee: the send went out, so the limit is owed even though no receipt came back.
+        out.push({ block: p.block, quote: { ...p.quote, status: "lost" }, canceled: [] });
       }
     }));
     if (lost) await this.resyncNonce().catch(() => {});
@@ -255,14 +256,23 @@ export class Market {
    * or two cancels a normal block carries, x1.15. Never in the hot loop. Needs margin funds to succeed.
    */
   private async initGasLimit() {
-    if (config.gasLimit) { this.gasLimit = BN.from(config.gasLimit); }
-    else {
+    if (config.gasLimit) {
+      this.gasLimit = BN.from(config.gasLimit);
+      if (config.gasLimit > config.risk.estimateGasLimitCeiling) {
+        console.warn(`GAS_LIMIT=${config.gasLimit} is past the ${config.risk.estimateGasLimitCeiling} sanity ceiling: Monad charges the limit on every block, so this is a standing bill.`);
+      }
+    } else {
       try {
         const book = await this.readBook();
         const side: Side = this.margin.usdc >= config.tradeSizeMon * book.ask ? "buy" : "sell";
         const data = this.encode(side, config.tradeSizeMon, this.quotePrice(side, book), []);
         const est = await this.provider.estimateGas({ to: config.market, from: this.wallet!.address, data });
-        this.gasLimit = est.add(90_000).mul(115).div(100);
+        // Monad charges the LIMIT, so an estimate that comes back absurd is a bill paid every 300 ms, not
+        // a one-off. A measured place is ~282k; anything past the ceiling is an artifact, not a number.
+        const padded = est.add(90_000).mul(115).div(100);
+        const ceiling = config.risk.estimateGasLimitCeiling;
+        if (padded.gt(ceiling)) console.warn(`gas estimate ${padded.toString()} is past the ${ceiling} ceiling; clamping (set GAS_LIMIT to choose a value yourself)`);
+        this.gasLimit = padded.gt(ceiling) ? BN.from(ceiling) : padded;
       } catch (e) {
         console.warn(`gas estimate failed (${(e as Error).message.slice(0, 120)}); using ${config.gasLimitFallback}`);
       }
@@ -275,7 +285,17 @@ export class Market {
     return Number(ethers.utils.formatEther(limit.mul(feeWei)));
   }
 
+  /**
+   * A dropped send leaves a gap. Resyncing to the confirmed nonce is not enough: a tx the node has not
+   * seen yet is either in the mempool (pending) or gone, and signing the nonce it already used gets
+   * "nonce too low" for every block until it clears. Take the higher of confirmed and pending.
+   */
   private async resyncNonce() {
-    this.nonce = parseInt(await rpc<string>("eth_getTransactionCount", [this.wallet!.address, "latest"]), 16);
+    const addr = this.wallet!.address;
+    const [latest, pending] = await Promise.all([
+      rpc<string>("eth_getTransactionCount", [addr, "latest"]),
+      rpc<string>("eth_getTransactionCount", [addr, "pending"]).catch(() => "0x0"),
+    ]);
+    this.nonce = Math.max(parseInt(latest, 16), parseInt(pending, 16));
   }
 }

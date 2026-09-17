@@ -2,7 +2,7 @@ import { config } from "./config";
 import type { Fill, Quote } from "./market";
 import type { BlockEvent } from "./trader";
 
-interface Meta { model: string; wallet: string | null; dryRun: boolean; market: string; startedAt: number }
+interface Meta { model: string; wallet: string | null; dryRun: boolean; market: string; risk: boolean; startedAt: number }
 
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });

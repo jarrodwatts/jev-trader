@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { config } from "./config";
 import { Market, type Book, type Fill, type Quote, type QuoteResult, type Side } from "./market";
 import type { Action, Decision, Model, TradeState } from "./model";
+import { RiskGuard, type RiskState, type Trip } from "./risk";
 import { TradeFeed, type MakerFill, type TradePrint } from "./trades";
 
 export interface BlockEvent {
@@ -20,6 +21,8 @@ export interface BlockEvent {
   resting: { bidMon: number; askMon: number };
   position: { side: "long" | "short" | "flat"; size: number; entryPrice: number | null; unrealizedUsd: number; unrealizedMon: number };
   totals: Totals;
+  /** Limiter state for this block, or null while the risk layer is off. */
+  risk: RiskState | null;
 }
 
 /** Per-block latency: the book read, and read + decide + send end to end. */
@@ -32,8 +35,12 @@ export interface Totals {
   fills: number;
   reverted: number;
   lateBlocks: number;
+  /** Blocks where the risk layer refused the quote (edge too thin, budget spent, or tripped). */
+  riskSkips: number;
   jevUsd: number;
   gasMon: number;
+  /** Gas we were charged for a `lost` tx: the send went out, the receipt never arrived. */
+  gasMonUnconfirmed: number;
   gasUsd: number;
   realizedUsd: number;
   pnlUsd: number;
@@ -55,6 +62,7 @@ interface Resting { side: Side; price: number; size: number; block: number }
  */
 export class Trader {
   readonly history: BlockEvent[] = [];
+  readonly risk = new RiskGuard();
   private mids: number[] = [];
   private busy = false;
   private lastBook: Book | null = null;
@@ -63,9 +71,11 @@ export class Trader {
   private orders = new Map<number, Resting>();
   /** Live quotes sent but not yet confirmed; they may become resting orders, so they count toward the cap. */
   private inflight = new Map<string, Quote>();
+  /** Why the last block had no quote, for the log line. Null when a quote went out. */
+  private skipReason: string | null = null;
   private simId = 0;
   private position = { mon: 0, costUsd: 0 }; // signed inventory and its cost basis
-  private totals: Totals = { blocks: 0, decisions: 0, quotes: 0, fills: 0, reverted: 0, lateBlocks: 0, jevUsd: 0, gasMon: 0, gasUsd: 0, realizedUsd: 0, pnlUsd: 0, pnlMon: 0, pnlPct: 0 };
+  private totals: Totals = { blocks: 0, decisions: 0, quotes: 0, fills: 0, reverted: 0, lateBlocks: 0, riskSkips: 0, jevUsd: 0, gasMon: 0, gasMonUnconfirmed: 0, gasUsd: 0, realizedUsd: 0, pnlUsd: 0, pnlMon: 0, pnlPct: 0 };
 
   constructor(
     private market: Market,
@@ -82,13 +92,31 @@ export class Trader {
     this.trades = new TradeFeed({ market: config.market, url: config.readRpcUrl, sizeDec, maker: this.market.address });
   }
 
+  /** Why the last block had no quote, or null if it had one. */
+  get lastSkipReason() { return this.skipReason; }
+
   async onBlock(block: number) {
     this.totals.blocks++;
     this.confirmPending(block); // off the hot path: receipts for earlier blocks' sends
-    if (this.totals.blocks % config.refreshBlocks === 0) this.market.refresh().catch(() => {}); // fee estimate + margin + vault check
+    if (this.totals.blocks % config.refreshBlocks === 0) {
+      // fee estimate + margin + vault check, plus the risk layer's view of the collateral
+      this.market.refresh()
+        .then(() => this.risk.noteMargin(this.market.margin.mon, this.market.margin.usdc, this.mids.at(-1) ?? 0))
+        .catch(() => {});
+    }
     if (this.busy) {
       this.totals.lateBlocks++;
+      this.risk.noteLate(true);
       if (this.lastBook) this.emit(block, this.lastBook, null, null, true);
+      return;
+    }
+    this.risk.noteLate(false);
+    // First gate, before the book read: a spent gas budget should not even pay for the eth_call.
+    const gate = this.risk.allowTrading();
+    if (!gate.ok) {
+      this.totals.riskSkips++;
+      this.skipReason = `${gate.reason}: ${gate.detail}`;
+      if (this.lastBook) this.emit(block, this.lastBook, null, null, false);
       return;
     }
     this.busy = true;
@@ -102,15 +130,31 @@ export class Trader {
       this.trades?.poll(block).then(() => this.harvest()); // off the hot path: eth_getLogs for prints (and our fills) since the last poll
 
       const decision = await this.model.decide(this.buildState(block, book));
+      this.risk.noteBook(book);
       const wanted: Side = decision.action === "sell" ? "sell" : "buy";
       const other: Side = wanted === "buy" ? "sell" : "buy";
-      // The position cap (and, live, margin funds) can only pick the reducing side. The probabilities still show the model's call.
-      const side: Side | null = this.allowed(wanted, book) ? wanted : this.allowed(other, book) ? other : null;
+      // The position cap (and, live, margin funds) can only pick the reducing side. The probabilities
+      // still show the model's call. With the risk layer on, a blocked side is no quote at all rather
+      // than a trade the model did not ask for.
+      let side: Side | null = null;
+      if (this.allowed(wanted, book)) side = wanted;
+      else if (this.risk.allowCounterTrade && this.allowed(other, book)) side = other;
       this.totals.decisions++;
       this.totals.jevUsd += (decision.inputTokens / 1e6) * config.jevUsdPerMTok;
 
+      // Second gate: an allowed quote still has to be worth a block of gas.
+      if (side) {
+        const worth = this.risk.allowQuote(book, this.exposureIf(side));
+        if (!worth.ok) {
+          side = null;
+          this.totals.riskSkips++;
+          this.skipReason = worth.detail;
+        }
+      }
+
       let quote: Quote | null = null;
       if (side) {
+        this.skipReason = null;
         decision.action = side;
         const cancel = [...this.orders.keys()].filter((id) => id > 0); // simulated orders have negative ids
         quote = await this.market.send(block, side, config.tradeSizeMon, book, cancel, side !== wanted);
@@ -139,8 +183,12 @@ export class Trader {
 
   private applyQuoteResult({ block, quote, canceled }: QuoteResult) {
     if (quote.txHash) this.inflight.delete(quote.txHash);
-    this.totals.gasMon += quote.gasMon; // charged on reverts too
+    // charged on reverts too. A `lost` tx was sent, so the fee is owed either way: it goes in its own
+    // bucket instead of being dropped, which is what `gasMon: 0` used to do.
+    if (quote.status === "lost") this.totals.gasMonUnconfirmed += quote.gasMon;
+    else this.totals.gasMon += quote.gasMon;
     if (quote.status === "reverted") this.totals.reverted++;
+    this.risk.noteQuote(quote.status, quote.gasMon);
     for (const id of canceled) this.orders.delete(id);
     if (quote.status === "placed" && quote.orderId !== null) this.orders.set(quote.orderId, { side: quote.side, price: quote.price, size: quote.size, block });
     const e = this.history.find((h) => h.block === block);
@@ -206,11 +254,16 @@ export class Trader {
     return mon;
   }
 
+  /** Signed inventory if a `tradeSizeMon` quote on this side rests and fills: what the caps are checked against. */
+  private exposureIf(side: Side) {
+    const size = config.tradeSizeMon;
+    return side === "buy" ? this.position.mon + this.restingMon("buy") + size : this.position.mon - this.restingMon("sell") - size;
+  }
+
   /** Would this order, and everything already resting on its side, keep us inside the cap and (live) inside margin funds? */
   private allowed(side: Side, book: Book) {
     const size = config.tradeSizeMon;
-    const exposure = side === "buy" ? this.position.mon + this.restingMon("buy") + size : this.position.mon - this.restingMon("sell") - size;
-    if (Math.abs(exposure) > config.maxPositionMon) return false;
+    if (Math.abs(this.exposureIf(side)) > config.maxPositionMon) return false;
     if (!this.market.wallet) return true;
     // Kuru debits margin when an order is placed, so the balance already excludes what is resting.
     return side === "buy" ? this.market.margin.usdc >= size * book.ask : this.market.margin.mon >= size;
@@ -259,6 +312,8 @@ export class Trader {
     p.mon += signed;
     if (Math.abs(p.mon) < 1e-9) { p.mon = 0; p.costUsd = 0; }
     this.totals.fills++;
+    this.risk.noteFill();
+    this.risk.notePosition(p.mon);
   }
 
   private entryPrice() { return this.position.mon ? this.position.costUsd / this.position.mon : null; }
@@ -268,9 +323,12 @@ export class Trader {
     const t = this.totals;
     t.gasUsd = t.gasMon * book.mid;
     const unrealized = this.unrealizedUsd(book.mid);
-    t.pnlUsd = t.realizedUsd + unrealized - t.gasUsd;
+    // `gasMonUnconfirmed` is the fee on sends whose receipt never arrived. Monad charges the limit, so
+    // counting it keeps the P&L from reading better than the chain does.
+    t.pnlUsd = t.realizedUsd + unrealized - (t.gasMon + t.gasMonUnconfirmed) * book.mid;
     t.pnlMon = t.pnlUsd / book.mid;
     t.pnlPct = (t.pnlUsd / config.bankrollUsd) * 100;
+    this.risk.notePnl(t.pnlUsd);
     const size = Math.abs(this.position.mon);
     const event: BlockEvent = {
       block, ts: Date.now(), mid: book.mid, bestBid: book.bid, bestAsk: book.ask, spreadBps: round(book.spreadBps, 2),
@@ -284,7 +342,8 @@ export class Trader {
         side: this.position.mon > 0 ? "long" : this.position.mon < 0 ? "short" : "flat",
         size, entryPrice: this.entryPrice(), unrealizedUsd: round(unrealized, 4), unrealizedMon: round(unrealized / book.mid, 4),
       },
-      totals: { ...t, jevUsd: round(t.jevUsd, 6), gasMon: round(t.gasMon, 6), gasUsd: round(t.gasUsd, 6), realizedUsd: round(t.realizedUsd, 4), pnlUsd: round(t.pnlUsd, 4), pnlMon: round(t.pnlMon, 4), pnlPct: round(t.pnlPct, 3) },
+      totals: { ...t, jevUsd: round(t.jevUsd, 6), gasMon: round(t.gasMon, 6), gasMonUnconfirmed: round(t.gasMonUnconfirmed, 6), gasUsd: round(t.gasUsd, 6), realizedUsd: round(t.realizedUsd, 4), pnlUsd: round(t.pnlUsd, 4), pnlMon: round(t.pnlMon, 4), pnlPct: round(t.pnlPct, 3) },
+      risk: this.risk.enabled ? this.risk.state() : null,
     };
     this.history.push(event);
     if (this.history.length > config.historySize) this.history.shift();

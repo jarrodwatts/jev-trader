@@ -28,10 +28,11 @@ Every event (see `src/trader.ts` for types):
       "fill": null,
       "resting": { "bidMon": 200, "askMon": 200 },
       "position": { "side": "short", "size": 200, "entryPrice": 0.022633, "unrealizedUsd": -0.0006, "unrealizedMon": -0.027 },
-      "totals": { "blocks": 3, "decisions": 3, "quotes": 3, "fills": 1, "reverted": 0, "lateBlocks": 0, "jevUsd": 0.000004, "gasMon": 0.107, "gasUsd": 0.0024, "realizedUsd": 0, "pnlUsd": -0.003, "pnlMon": -0.13, "pnlPct": -0.003 }
+      "totals": { "blocks": 3, "decisions": 3, "quotes": 3, "fills": 1, "reverted": 0, "lateBlocks": 0, "riskSkips": 0, "jevUsd": 0.000004, "gasMon": 0.107, "gasMonUnconfirmed": 0, "gasUsd": 0.0024, "realizedUsd": 0, "pnlUsd": -0.003, "pnlMon": -0.13, "pnlPct": -0.003 },
+      "risk": null
     }
 
-Every block the model is asked about the move over `HORIZON_BLOCKS` (default 100, ~30 s) and answers `buy` or `sell`. `quote` is the order that block put on the book: a post-only limit order of `TRADE_SIZE_MON` on that side, `QUOTE_INSIDE_TICKS` inside the touch (clamped to the touch when the spread is too tight), in one `batchUpdate` that also cancels everything we had resting (`cancel`). `hold` appears only with `decision.late: true`, when the model missed the block and nothing was posted. When the position cap (or, live, margin funds) blocks a side, the quote goes on the other side with `capped: true` and `probabilities` still show the model's call. `resting` is our size known to be on the book after this block. `upIn10` equals the buy probability.
+Every block the model is asked about the move over `HORIZON_BLOCKS` (default 100, ~30 s) and answers `buy` or `sell`. `quote` is the order that block put on the book: a post-only limit order of `TRADE_SIZE_MON` on that side, `QUOTE_INSIDE_TICKS` inside the touch (clamped to the touch when the spread is too tight), in one `batchUpdate` that also cancels everything we had resting (`cancel`). `hold` appears only with `decision.late: true`, when the model missed the block and nothing was posted. When the position cap (or, live, margin funds) blocks a side, the quote goes on the other side with `capped: true` and `probabilities` still show the model's call; with the risk layer on, a blocked side is a skipped block instead (`totals.riskSkips`). `resting` is our size known to be on the book after this block. `upIn10` equals the buy probability.
 
 Live sends are fired and forgotten, so the `block` event carries the **intent**: `status: "sent"`, `gasMon` is `gasLimit x (last known base fee + priority)`. Monad charges the gas limit, so that is the real cost whether the order lands or not. The receipt arrives a block or two later as its own SSE event:
 
@@ -53,7 +54,44 @@ Live sends are fired and forgotten, so the `block` event carries the **intent**:
     src/market.ts   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation
     src/model.ts    Model interface, JevModel (AI SDK experimental_evaluate), MockModel
     src/trader.ts   the loop: one in flight, hold when late, position and P&L accounting
+    src/risk.ts     opt-in limiter: gas budget, loss breaker, edge check, stand-down at the cap
     src/server.ts   Bun.serve: snapshot, history, SSE
+
+## Risk
+
+Off by default, `RISK_ENABLED=true` to turn it on (`src/risk.ts`). The demo posts on every block on
+purpose, so the limiter is opt-in: with it off, nothing changes. With it on, the loop stands down
+instead of trading through a budget.
+
+    risk: on
+      gas      0.03570 MON/block, 428 MON/hour, caps 100/hour and 2000 total
+      loss     stop at -$50 (hard: needs resume())
+      edge     need 0 bps minimum; a 200 MON quote pays 1.78 bps of gas
+      reverts  stop above 60% of the last 200 quotes
+      late     stop after 60 blocks with no decision; transient stops pause 30 min
+      at cap   stand down
+
+Monad charges the gas *limit*, so posting an order and cancelling it cost the same, landed or
+reverted: at the default 350,000 limit that is 0.0357 MON per block and 428 MON per hour whether the
+order ever rests or not. The limiter is the only thing in the process with an opinion about that.
+
+- **gas** — stop when an hour, or the whole run, has spent its budget (`RISK_MAX_GAS_MON_PER_HOUR`,
+  `RISK_MAX_GAS_MON`). Sends whose receipt never arrives are charged too: they went out.
+- **loss** — stop at a P&L line (`RISK_MAX_LOSS_USD`). Spent bankroll and spent lifetime gas are *hard*
+  stops: they stay stopped until `resume()` is called, or the limit is raised and the process restarted.
+- **edge** — skip a block whose quote cannot pay for its own gas. A 200 MON post one tick inside a 2 bps
+  book captures ~0.57 bps of notional; the block costs ~1.78 bps. `RISK_MIN_EDGE_BPS=0` requires the fill
+  to cover its own block, a positive value demands a margin on top, a negative one switches the check off.
+- **reverts** — a quote that reverted (the book moved through the price before the tx landed) paid full
+  price for nothing. Stop when most of the last `RISK_REVERT_WINDOW` quotes did.
+- **late** — a block where the model missed 300 ms posts nothing, which is free. A long run of them means
+  the loop is guessing, not trading.
+- **counter trade** — when the position cap blocks the model's side, the loop can post the opposite one
+  (`capped: true`). With the limiter on, the default is to stand down for that block.
+
+`data/risk.json` keeps the gas spent and any open stop across restarts, so a restart does not spend the
+same budget twice. The same numbers ride the block event as `risk`, so a dashboard can say why the loop
+went quiet. `bun test` covers the limiter (20 cases, no network).
 
 ## The 300 ms budget
 

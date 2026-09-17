@@ -44,13 +44,13 @@ const QUESTIONS = {
     type: "choice",
     instructions: {
       question: "Will MON be higher or lower than the current mid after `horizonBlocks` more blocks?",
-      goal: "Trade MON-USDC on Kuru. Blocks are ~300ms; `horizonBlocks` (~30 s) is the horizon. A decision is made every few blocks and held until the next one. The trade crosses the spread (`spreadBps`), so the move must beat that cost.",
-      timing: "The order executes as an immediate-or-cancel market order in the next block.",
-      inputs: "Taker flow is the strongest signal: `trades.cvdMon` (taker buys minus taker sells over the horizon), `trades.lastSide` and `recentTrades` show who is hitting the book. `depth` and `book` show resting liquidity per side at several distances from mid; thin depth on one side means price moves easily that way. `returnsBps` and `recentMids` show the path over the horizon. If `allowed.buy` is false the trade will be a sell regardless, and vice versa.",
+      goal: "Trade MON-USDC on Kuru. Blocks are ~300ms; `horizonBlocks` (~30 s) is the horizon. A decision is made every block and its order rests until the next one. Orders are post-only and rest one tick inside the touch, so they earn the spread (`spreadBps`) instead of paying it: the risk is being filled on the side the market is about to move against, which is what `trades.cvdMon`, `depth` and `returnsBps` describe.",
+      timing: "The order is a post-only limit order one tick inside the touch, posted in the next block and replaced by the next block's order. It is filled only if a taker crosses it.",
+      inputs: "Taker flow is the strongest signal: `trades.cvdMon` (taker buys minus taker sells over the horizon), `trades.lastSide` and `recentTrades` show who is hitting the book. `depth` and `book` show resting liquidity per side at several distances from mid; thin depth on one side means price moves easily that way. `returnsBps` and `recentMids` show the path over the horizon. `allowed.buy` false means no order will rest on the bid this block, and vice versa.",
     },
     criteria: {
-      buy: "Buy MON now: mid more likely to be higher after `horizonBlocks` blocks, by more than the spread.",
-      sell: "Sell MON now: mid more likely to be lower after `horizonBlocks` blocks, by more than the spread.",
+      buy: "Buy MON now: post a bid; mid more likely to hold or rise after `horizonBlocks` blocks, so a taker selling into it is not about to push it lower.",
+      sell: "Sell MON now: post an ask; mid more likely to hold or fall after `horizonBlocks` blocks, so a taker buying into it is not about to push it higher.",
     },
   },
 } as const;

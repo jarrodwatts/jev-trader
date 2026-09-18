@@ -102,15 +102,28 @@ export class Trader {
       this.trades?.poll(block).then(() => this.harvest()); // off the hot path: eth_getLogs for prints (and our fills) since the last poll
 
       const decision = await this.model.decide(this.buildState(block, book));
-      const wanted: Side = decision.action === "sell" ? "sell" : "buy";
-      const other: Side = wanted === "buy" ? "sell" : "buy";
-      // The position cap (and, live, margin funds) can only pick the reducing side. The probabilities still show the model's call.
-      const side: Side | null = this.allowed(wanted, book) ? wanted : this.allowed(other, book) ? other : null;
+      const buyProb = decision.probabilities.buy ?? 0;
+      const sellProb = decision.probabilities.sell ?? 0;
+      const maxProb = Math.max(buyProb, sellProb);
+
+      // Confidence gating: if the model's confidence does not clear the threshold,
+      // treat the action as hold (dead-band / de-risk) to avoid trading on noise.
+      if (maxProb < config.confidenceThreshold) {
+        decision.action = "hold";
+      }
+
+      const wanted: Side | null = decision.action === "buy" ? "buy" : decision.action === "sell" ? "sell" : null;
+      let side: Side | null = null;
+      if (wanted) {
+        const other: Side = wanted === "buy" ? "sell" : "buy";
+        // The position cap (and, live, margin funds) can only pick the reducing side. The probabilities still show the model's call.
+        side = this.allowed(wanted, book) ? wanted : this.allowed(other, book) ? other : null;
+      }
       this.totals.decisions++;
       this.totals.jevUsd += (decision.inputTokens / 1e6) * config.jevUsdPerMTok;
 
       let quote: Quote | null = null;
-      if (side) {
+      if (side && wanted) {
         decision.action = side;
         const cancel = [...this.orders.keys()].filter((id) => id > 0); // simulated orders have negative ids
         quote = await this.market.send(block, side, config.tradeSizeMon, book, cancel, side !== wanted);

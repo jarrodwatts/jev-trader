@@ -26,7 +26,8 @@ export const config = {
   maxFeeGwei: Number(env("MAX_FEE_GWEI", "400")),
   priorityFeeGwei: Number(env("PRIORITY_FEE_GWEI", "2")), // Monad hardcodes eth_maxPriorityFeePerGas at 2
   pendingBlocks: 10, // give up on a tx with no receipt after this many blocks
-  refreshBlocks: 200, // how often to refresh the fee estimate, margin balances and the vault check
+  refreshBlocks: 200, // how often to refresh the fee estimate and the vault check
+  marginRefreshBlocks: 10, // how often margin balances are reconciled on chain; the local mirror carries the blocks between
   horizonBlocks: Number(env("HORIZON_BLOCKS", "100")), // the model is asked about the move over this many blocks (~30 s)
   model: env("MODEL", "mock") as "mock" | "jev",
   jevModelId: env("JEV_MODEL_ID", "jev-latest")!,

@@ -70,7 +70,12 @@ export class Market {
   /** null in a dry run (no key, or DRY_RUN=true): nothing is signed, nothing is sent. */
   readonly wallet = config.dryRun ? null : new ethers.Wallet(config.privateKey!, this.provider);
   params!: Kuru.MarketParams; // public so scripts can build txs without init()
-  /** Margin account balances, refreshed every `config.refreshBlocks`. Limit orders draw from here. */
+  /**
+   * Margin account balances. Limit orders draw from here, and Kuru debits the moment an order is placed,
+   * so this is mirrored locally on every place, cancel and fill and reconciled on chain every
+   * `config.marginRefreshBlocks`. Reading it only on the slow refresh let the bot quote a side it could no
+   * longer fund, and Kuru burns the whole gas limit on that failure.
+   */
   margin = { mon: 0, usdc: 0 };
   private iface = new ethers.utils.Interface(OrderBookAbi.abi);
   private marginIface = new ethers.utils.Interface(MarginAccountAbi.abi);
@@ -94,18 +99,41 @@ export class Market {
     await this.initGasLimit();
   }
 
-  /** Every `config.refreshBlocks`: fee estimate, margin balances, and whether the Kuru AMM vault went live. */
+  /** Every `config.refreshBlocks`: fee estimate, whether the Kuru AMM vault went live, and a margin reconcile. */
   async refresh() {
-    const [fee, vault, mon, usdc] = await Promise.allSettled([
+    const [fee, vault] = await Promise.allSettled([
       rpc<string>("eth_gasPrice"),
       readVaultParams(config.readRpcUrl, config.market),
-      this.wallet ? this.marginBalance(ZERO_ADDRESS) : Promise.resolve(null),
-      this.wallet ? this.marginBalance(this.params.quoteAssetAddress) : Promise.resolve(null),
     ]);
     if (fee.status === "fulfilled") this.feeWei = BN.from(fee.value);
     if (vault.status === "fulfilled") this.useVault = vaultActive(vault.value);
-    if (mon.status === "fulfilled" && mon.value) this.margin.mon = Number(ethers.utils.formatUnits(mon.value, this.params.baseAssetDecimals.toNumber()));
-    if (usdc.status === "fulfilled" && usdc.value) this.margin.usdc = Number(ethers.utils.formatUnits(usdc.value, this.params.quoteAssetDecimals.toNumber()));
+    await this.marginReconcile();
+  }
+
+  /** Margin balances only: two eth_calls off the hot path, run far more often than the full refresh. */
+  async marginReconcile() {
+    if (!this.wallet) return;
+    const [mon, usdc] = await Promise.allSettled([this.marginBalance(ZERO_ADDRESS), this.marginBalance(this.params.quoteAssetAddress)]);
+    if (mon.status === "fulfilled") this.margin.mon = Number(ethers.utils.formatUnits(mon.value, this.params.baseAssetDecimals.toNumber()));
+    if (usdc.status === "fulfilled") this.margin.usdc = Number(ethers.utils.formatUnits(usdc.value, this.params.quoteAssetDecimals.toNumber()));
+  }
+
+  /** Placing debits margin on chain immediately; mirror it so the next block sees the real balance. */
+  lockQuote(side: Side, sizeMon: number, price: number) {
+    if (side === "buy") this.margin.usdc -= sizeMon * price;
+    else this.margin.mon -= sizeMon;
+  }
+
+  /** The order never rested (reverted, lost) or was cancelled, so its margin is ours again. */
+  releaseQuote(side: Side, sizeMon: number, price: number) {
+    if (side === "buy") this.margin.usdc += sizeMon * price;
+    else this.margin.mon += sizeMon;
+  }
+
+  /** A maker fill hands us the other asset; what we posted was already debited when it was placed. */
+  creditFill(side: Side, sizeMon: number, price: number) {
+    if (side === "buy") this.margin.mon += sizeMon;
+    else this.margin.usdc += sizeMon * price;
   }
 
   /** One eth_call (two batched into one HTTP request once the vault is live). */

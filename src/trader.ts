@@ -85,7 +85,8 @@ export class Trader {
   async onBlock(block: number) {
     this.totals.blocks++;
     this.confirmPending(block); // off the hot path: receipts for earlier blocks' sends
-    if (this.totals.blocks % config.refreshBlocks === 0) this.market.refresh().catch(() => {}); // fee estimate + margin + vault check
+    if (this.totals.blocks % config.refreshBlocks === 0) this.market.refresh().catch(() => {}); // fee estimate + vault check + margin
+    else if (this.totals.blocks % config.marginRefreshBlocks === 0) this.market.marginReconcile().catch(() => {}); // off the hot path
     if (this.busy) {
       this.totals.lateBlocks++;
       if (this.lastBook) this.emit(block, this.lastBook, null, null, true);
@@ -120,6 +121,7 @@ export class Trader {
           this.orders.set(--this.simId, { side, price: quote.price, size: quote.size, block });
         } else if (quote.txHash) {
           this.inflight.set(quote.txHash, quote);
+          this.market.lockQuote(side, quote.size, quote.price);
         }
       }
       this.emit(block, book, decision, quote, false, { readMs: Math.round(readMs), loopMs: Math.round(performance.now() - t0) });
@@ -141,7 +143,14 @@ export class Trader {
     if (quote.txHash) this.inflight.delete(quote.txHash);
     this.totals.gasMon += quote.gasMon; // charged on reverts too
     if (quote.status === "reverted") this.totals.reverted++;
-    for (const id of canceled) this.orders.delete(id);
+    // Reverted and sim orders never rested, so their margin was never debited. A lost one may have landed:
+    // releasing is the optimistic guess, and the next reconcile corrects it either way.
+    if (quote.status !== "placed") this.market.releaseQuote(quote.side, quote.size, quote.price);
+    for (const id of canceled) {
+      const o = this.orders.get(id);
+      if (o) this.market.releaseQuote(o.side, o.size, o.price);
+      this.orders.delete(id);
+    }
     if (quote.status === "placed" && quote.orderId !== null) this.orders.set(quote.orderId, { side: quote.side, price: quote.price, size: quote.size, block });
     const e = this.history.find((h) => h.block === block);
     if (e) e.quote = quote;
@@ -174,6 +183,7 @@ export class Trader {
       const o = this.orders.get(f.orderId);
       if (f.updatedSize <= 0) this.orders.delete(f.orderId);
       else if (o) o.size = f.updatedSize;
+      this.market.creditFill(f.side, f.size, f.price);
       out.push({ side: f.side, size: f.size, price: f.price, txHash: f.txHash, orderId: f.orderId, simulated: false, block: f.block });
     }
     return out;

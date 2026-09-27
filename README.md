@@ -16,7 +16,7 @@ Deployed (dry run, mock model): https://jev-trader-production.up.railway.app
 
 - `GET /` snapshot: model, wallet, dryRun, latest block event
 - `GET /history` last 1000 block events
-- `GET /events` SSE: `snapshot` on connect, then one `block` event per block, plus a `fill` event whenever a live order's receipt lands
+- `GET /events` SSE: `snapshot` on connect, then one `block` event per block, a `quote` event when a live order's receipt lands, a `fill` event when a taker hits a resting order, and a `ping` every 15 s
 
 Every event (see `src/trader.ts` for types):
 
@@ -52,6 +52,7 @@ Live sends are fired and forgotten, so the `block` event carries the **intent**:
     src/book.ts     one-eth_call order book reader (decodes getL2Book, merges the AMM vault)
     src/market.ts   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation
     src/model.ts    Model interface, JevModel (AI SDK experimental_evaluate), MockModel
+    src/trades.ts   Trade log feed (eth_getLogs): taker prints, our maker fills, CVD summary
     src/trader.ts   the loop: one in flight, hold when late, position and P&L accounting
     src/server.ts   Bun.serve: snapshot, history, SSE
 

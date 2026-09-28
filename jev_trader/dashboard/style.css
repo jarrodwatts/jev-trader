@@ -1,0 +1,563 @@
+/* ---- Jev Trader design tokens (5e "Eleven", warm-neutral light system) ---- */
+:root {
+  /* surfaces */
+  --bg: #FFFFFF;
+  --panel: #F5F4F1;
+  --border: #ECECEA;
+  --border-2: #E5E4DF;
+  --track: #F1F0EC;
+
+  /* ink */
+  --ink: #0A0A0A;
+  --ink-2: #3C3C38;
+  --muted: #77776F;
+  --muted-2: #98968E;
+  --link-muted: #5A5A56;
+
+  /* sides */
+  --buy: #0FA968;
+  --buy-ink: #0B7A48;
+  --buy-bar: #34C382;
+  --buy-bar-dim: #D9EEE3;
+  --sell: #E4573D;
+  --sell-ink: #C2402F;
+  --sell-bar: #F07860;
+  --sell-bar-dim: #F9DED6;
+
+  /* block cells */
+  --late: #C98A1B;
+  --late-ink: #A16207;
+  --late-cell: #F2C063;
+  --hold-cell: #E3E1DA;
+  --link: #7B6ED9;
+
+  /* chrome */
+  --badge-jev-bg: #EBE7FC;
+  --badge-jev-fg: #4C3EBB;
+  --badge-standin-bg: #FBEED3;
+  --badge-standin-fg: #8A5B0E;
+  --pnl-pos: #0E9F5D;
+  --pnl-neg: #DE3B32;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* page */
+  --page-bg: #F0EEE9;
+  --card-radius: 18px;
+  --card-max: 1400px;
+}
+
+/* ---- base: undo NiceGUI / Quasar page chrome ---- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body, body.body--light {
+  background: var(--page-bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.q-page, .nicegui-content {
+  padding: 0 !important;
+  gap: 0 !important;
+  display: block !important;
+  min-height: 0 !important;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+svg { display: block; max-width: 100%; }
+
+/* ---- the card: the design's 1400px white slab, centered on the warm page ----
+   Desktop (>= 900px): the card is exactly the viewport minus its 16px margins
+   and is a flex column, so header + stats take their natural height and the
+   main row absorbs the rest. Below 900px the card is auto-height and the page scrolls. */
+.jt-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  max-width: min(var(--card-max), calc(100% - 32px));
+  margin: 16px auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 16px;
+}
+
+@media (min-width: 900px) {
+  body { overflow: hidden; }
+  .jt-card { height: calc(100vh - 32px); }
+}
+
+/* ---- page shell: the two-column main row ---- */
+.jt-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+  padding: 0 24px;
+  align-items: stretch;
+}
+
+.jt-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.jt-right {
+  width: 470px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.jt-right > :first-child { flex: none; }
+.jt-right > :last-child { flex: 1; min-height: 0; }
+
+@media (max-width: 899.98px) {
+  .jt-main { flex: none; flex-direction: column; padding: 0 16px; }
+  .jt-left { flex: none; }
+  .jt-left .fc-panel { flex: none; aspect-ratio: 4 / 3; }
+  .jt-right { width: 100%; }
+}
+
+/* ---- header ---- */
+.hd {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 16px 24px;
+}
+
+.hd-brand {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.hd-block {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-spacer { flex: 1; }
+
+/* only rendered while waiting for the first block: static, muted, no animation */
+.hd-offline {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+
+.hd-wallet {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.hd-wallet:hover:not(:disabled) { border-color: var(--muted-2); }
+.hd-wallet:disabled { cursor: default; }
+
+.hd-badge {
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.3s, color 0.3s;
+}
+
+.hd-badge.jev { background: var(--badge-jev-bg); color: var(--badge-jev-fg); }
+.hd-badge.standin { background: var(--badge-standin-bg); color: var(--badge-standin-fg); }
+
+@media (max-width: 640px) {
+  .hd { flex-wrap: wrap; row-gap: 10px; gap: 12px; padding: 14px 16px; }
+  .hd-block { display: none; }
+  .hd-spacer { flex: 1 0 100%; height: 0; }
+}
+
+/* ---- stats row ---- */
+.st {
+  flex: none;
+  display: flex;
+  gap: 20px;
+  padding: 0 24px 10px;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.st-spacer { flex: 1; }
+
+@media (max-width: 640px) {
+  .st { flex-wrap: wrap; gap: 12px 16px; padding: 0 16px 10px; }
+  .st-spacer { display: none; }
+}
+
+/* ---- decision panel ---- */
+.dp { flex: none; display: flex; flex-direction: column; }
+
+.dp-section { padding: 18px; border-bottom: 1px solid var(--border); }
+
+.dp-section-label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  color: var(--muted-2);
+}
+
+.dp-section-label.gap { margin-bottom: 10px; }
+
+.dp-order {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.dp-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 14px;
+  transition: color 0.3s;
+}
+
+.dp-headline-word {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.dp-headline-pct {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dp-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+
+.dp-label {
+  width: 44px;
+  flex: none;
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.2;
+  transition: opacity 0.3s;
+}
+
+.dp-track {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  border-radius: 99px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.dp-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.25s linear, background 0.25s;
+}
+
+.dp-pct {
+  width: 46px;
+  flex: none;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- feed ---- */
+.fd {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 14px;
+}
+
+.fd-label {
+  flex: none;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  color: var(--muted-2);
+  padding: 0 18px 8px;
+}
+
+/* rows are a fixed 26px and the list clips, so a tall list never shows a half-drawn row */
+.fd-list { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+
+.fd-list::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--bg));
+  pointer-events: none;
+}
+
+.fd-row {
+  flex: none;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  transition: background 0.5s;
+}
+
+/* only a row that just arrived slides in */
+.fd-row.fd-in { animation: feedRowIn 0.25s ease-out both; }
+
+@keyframes feedRowIn {
+  from { transform: translateY(-6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.fd-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.fd-block { width: 94px; color: var(--muted-2); }
+.fd-word { width: 42px; font-weight: 700; }
+.fd-conf { width: 72px; color: var(--muted-2); }
+.fd-lat { width: 42px; color: var(--muted-2); }
+.fd-detail { flex: 1 1 auto; min-width: 0; }
+.fd-tx { flex: none; color: var(--link); }
+.fd-tx a { color: var(--link); text-decoration: none; }
+.fd-pending { opacity: 0.6; }
+.fd-muted { color: var(--muted-2); }
+
+.fd-empty {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.fd-buy .fd-word, .fd-buy .fd-detail { color: var(--buy); }
+.fd-sell .fd-word, .fd-sell .fd-detail { color: var(--sell); }
+.fd-late .fd-word, .fd-late .fd-detail { color: var(--late); }
+.fd-buy .fd-detail.fd-muted, .fd-sell .fd-detail.fd-muted, .fd-late .fd-detail.fd-muted { color: var(--muted-2); }
+
+/* trade rows get a faint tint; the newest row a stronger one */
+.fd-buy { background: rgba(15, 169, 104, 0.07); }
+.fd-sell { background: rgba(228, 87, 61, 0.07); }
+.fd-late { background: transparent; }
+.fd-newest.fd-buy { background: rgba(15, 169, 104, 0.16); }
+.fd-newest.fd-sell { background: rgba(228, 87, 61, 0.16); }
+.fd-newest.fd-late { background: rgba(0, 0, 0, 0.05); }
+
+/* a block where a taker hit one of our resting orders: the detail is the fill, in full weight */
+.fd-filled .fd-detail { font-weight: 600; }
+
+@media (max-width: 899.98px) {
+  .fd-list { flex: none; height: 390px; }
+}
+
+@media (max-width: 390px) {
+  .fd-conf { display: none; }
+  .fd-row { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .fd-label { padding-left: 12px; padding-right: 12px; }
+  .fd-block { width: 78px; }
+}
+
+/* ---- flow chart: the hero ---- */
+.fc-panel {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--panel);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.fc-layer { position: absolute; inset: 0; }
+
+.fc-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+/* the sliding group glides one 10px step left per block, from where the last render left it */
+.fc-slide-go { animation: fcSlide 0.3s linear; }
+@keyframes fcSlide { from { transform: translateX(var(--from)); } to { transform: translateX(var(--to)); } }
+
+/* last-price tag: tracks the line end vertically */
+.fc-tag-go { animation: fcTag 0.3s linear; }
+@keyframes fcTag { from { transform: translateY(var(--from)); } to { transform: translateY(var(--to)); } }
+
+.fc-line { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.fc-grid { stroke: #efede8; stroke-width: 1; }
+.fc-tick { font: 400 10px var(--font-mono); fill: var(--muted-2); font-variant-numeric: tabular-nums; }
+.fc-tag-text { font: 500 11px var(--font-mono); font-variant-numeric: tabular-nums; fill: #fff; }
+.fc-guide { stroke: var(--muted-2); stroke-width: 1; stroke-dasharray: 1 3; stroke-linecap: round; opacity: 0.7; }
+
+/* hover crosshair */
+.fc-cross { stroke: var(--ink); stroke-width: 1; opacity: 0.18; }
+.fc-cross-dot { fill: var(--bg); stroke: var(--ink); stroke-width: 1.6; }
+.fc-tip { fill: var(--bg); stroke: var(--border-2); stroke-width: 1; }
+.fc-tip-block { font: 400 10px var(--font-mono); font-variant-numeric: tabular-nums; fill: var(--muted); }
+.fc-tip-price { font: 500 14px var(--font-mono); font-variant-numeric: tabular-nums; fill: var(--ink); }
+.fc-tip-side { font: 500 11px var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.fc-tip-meta { font: 400 10px var(--font-mono); font-variant-numeric: tabular-nums; fill: var(--muted-2); }
+
+.fc-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 64px;
+  background: linear-gradient(90deg, var(--panel), transparent);
+  pointer-events: none;
+}
+
+.fc-tl { position: absolute; top: 18px; left: 22px; pointer-events: none; }
+.fc-tr { position: absolute; top: 18px; right: 22px; text-align: right; pointer-events: none; }
+
+.fc-price {
+  font: 500 34px var(--font-mono);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.fc-price-in { animation: fcFadeIn 0.3s ease-out; }
+@keyframes fcFadeIn { from { opacity: 0.45; } to { opacity: 1; } }
+
+.fc-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font: 400 12px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fc-tr .fc-sub { justify-content: flex-end; }
+
+.fc-word {
+  font: 300 30px var(--font-sans);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+/* one-shot trade cues: emitted only on the render where their block is new, so each plays once */
+.fc-ripple, .fc-bead-pop, .fc-cell-pop, .fc-cell-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.fc-ripple { vector-effect: non-scaling-stroke; animation: fcRipple 0.7s ease-out forwards; }
+@keyframes fcRipple { from { transform: scale(1); opacity: 0.9; } to { transform: scale(5.3); opacity: 0; } }
+
+.fc-bead-pop { animation: fcBeadPop 0.3s ease-out; }
+@keyframes fcBeadPop { from { transform: scale(1.8); } to { transform: scale(1); } }
+
+/* riser: joins the new strip cell to its bead on the line */
+.fc-riser { stroke-width: 1; pointer-events: none; animation: fcRiser 0.9s ease-out forwards; }
+@keyframes fcRiser { from { opacity: 0.35; } to { opacity: 0; } }
+
+.fc-cell-pop { animation: fcCellPop 0.25s ease-out; }
+@keyframes fcCellPop { from { transform: scale(1.6); } to { transform: scale(1); } }
+
+.fc-cell-glow { animation: fcCellGlow 0.6s ease-out forwards; }
+@keyframes fcCellGlow { from { transform: scale(1.4); opacity: 0.35; } to { transform: scale(2.3); opacity: 0; } }
+
+.fc-word-pop { transform-origin: right center; animation: fcWordPop 0.25s ease-out; }
+@keyframes fcWordPop { from { transform: scale(1.06); } to { transform: scale(1); } }
+
+.fc-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 400 13px var(--font-sans);
+  color: var(--muted-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .fc-ripple, .fc-riser, .fc-cell-glow { opacity: 0; }
+}

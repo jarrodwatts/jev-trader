@@ -1,24 +1,26 @@
 # jev-trader
 
-One decision every Monad block. A TypeSafe Jev model watches the Kuru MON-USDC order book and answers buy or sell every ~300 ms. Every block posts a real post-only limit order on that side, one tick inside the touch, replacing the last one. Fills happen when a taker hits it, so the bot earns the spread instead of paying it. A small server streams every block to the dashboard.
+One decision every Monad block. A TypeSafe Jev model watches the Kuru MON-USDC order book and answers buy or sell every ~300 ms. Every block posts a real post-only limit order on that side, one tick inside the touch, replacing the last one. Fills happen when a taker hits it, so the bot earns the spread instead of paying it. The same Python process serves a live dashboard at http://localhost:3000.
 
 ## Run
 
     cp .env.example .env
-    bun install
-    bun run start
+    python3 -m venv .venv && . .venv/bin/activate
+    pip install -e .            # or -e ".[fast]" for native secp256k1 signing (Python <= 3.13)
+    python -m jev_trader        # then open http://localhost:3000
+
+Or with Docker: `docker build -t jev-trader . && docker run --env-file .env -p 3000:3000 jev-trader`.
 
 With no `PRIVATE_KEY` it dry-runs: real book, real decisions, simulated fills. Set `MODEL=jev` and `TYPESAFE_AI_API_KEY` to use Jev; the default `mock` is a momentum heuristic stand-in.
 
 ## Endpoints
 
-Deployed (dry run, mock model): https://jev-trader-production.up.railway.app
-
-- `GET /` snapshot: model, wallet, dryRun, latest block event
+- `GET /` the dashboard (NiceGUI)
+- `GET /snapshot` model, wallet, dryRun, latest block event
 - `GET /history` last 1000 block events
 - `GET /events` SSE: `snapshot` on connect, then one `block` event per block, plus a `fill` event whenever a live order's receipt lands
 
-Every event (see `src/trader.ts` for types):
+Every event (see `jev_trader/trader.py` for the shape):
 
     {
       "block": 105488269, "ts": 1789593630676,
@@ -47,13 +49,17 @@ Live sends are fired and forgotten, so the `block` event carries the **intent**:
 
 ## Layout
 
-    src/config.ts   env
-    src/chain.ts    block feed (WebSocket newHeads + polling backstop, newest block only), raw RPC
-    src/book.ts     one-eth_call order book reader (decodes getL2Book, merges the AMM vault)
-    src/market.ts   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation
-    src/model.ts    Model interface, JevModel (AI SDK experimental_evaluate), MockModel
-    src/trader.ts   the loop: one in flight, hold when late, position and P&L accounting
-    src/server.ts   Bun.serve: snapshot, history, SSE
+    jev_trader/__main__.py starts the web server (NiceGUI) and the bot in one event loop
+    jev_trader/config.py   env (.env is loaded automatically)
+    jev_trader/chain.py    block feed (WebSocket newHeads + polling backstop, newest block only), raw RPC
+    jev_trader/book.py     one-eth_call order book reader (decodes getL2Book, merges the AMM vault)
+    jev_trader/abi.py      the Kuru signatures we encode and decode
+    jev_trader/market.py   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation
+    jev_trader/model.py    Model protocol, JevModel (TypeSafe System One API), MockModel
+    jev_trader/trades.py   Trade log feed: taker prints for the model, maker fills for us
+    jev_trader/trader.py   the loop: one in flight, hold when late, position and P&L accounting
+    jev_trader/server.py   snapshot, history and SSE endpoints on the NiceGUI (FastAPI) app
+    jev_trader/dashboard/  the dashboard at /: page.py (layout, header, stats, decision panel, feed), chart.py (the SVG price flow), style.css
 
 ## The 300 ms budget
 
@@ -66,5 +72,5 @@ startup), no `eth_sendRawTransactionSync` (it blocks until the tx is Proposed), 
 Receipts, the fee estimate and the vault check run off the hot path on later blocks. Measured in a
 dry run with the mock model: read p50 18 ms, whole loop p50 100 ms (80 ms of it the mock's inference stand-in).
 
-    bun run scripts/bench-read.ts     # book reader vs the SDK: exactness and latency
-    bun run scripts/dry-encode.ts     # signs a buy and a sell offline, asserts the calldata matches the SDK
+    python scripts/bench_read.py      # book reader latency, vault batch, AMM ladder merge
+    python scripts/dry_encode.py      # signs a buy and a sell offline, decodes the calldata back and checks it

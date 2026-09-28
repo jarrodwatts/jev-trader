@@ -3,3 +3,6 @@ node_modules
 data
 scripts
 .claude
+.venv
+__pycache__
+*.egg-info

@@ -1,0 +1,30 @@
+[project]
+name = "jev-trader"
+version = "0.1.0"
+description = "Jev decides buy or sell every Monad block and posts a post-only limit order on Kuru's on-chain order book, with a live local dashboard."
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9",
+    "eth-abi>=5",
+    "eth-account>=0.13",
+    "nicegui>=3.5",
+    "python-dotenv>=1",
+]
+
+[project.optional-dependencies]
+# libsecp256k1 signing (~0.1 ms instead of ~3 ms). Wheels exist up to Python 3.13.
+fast = ["coincurve>=20"]
+
+[project.scripts]
+jev-trader = "jev_trader.__main__:run"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["jev_trader", "jev_trader.dashboard"]
+
+[tool.setuptools.package-data]
+"jev_trader.dashboard" = ["style.css", "favicon.ico"]

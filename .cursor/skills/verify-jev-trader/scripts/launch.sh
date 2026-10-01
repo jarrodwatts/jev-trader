@@ -27,8 +27,9 @@ fi
 
 # Prefer dry-run for verification: no PRIVATE_KEY required; real book, simulated quotes.
 # Invoke src/index.ts directly (same as package.json "start") so the recorded PID owns :PORT.
+# setsid: new process group so cleanup can tear down bun wrappers + bun.exe listener together.
 cd "$REPO_ROOT"
-env PORT="$PORT" DRY_RUN="$DRY_RUN" MODEL="$MODEL" \
+setsid env PORT="$PORT" DRY_RUN="$DRY_RUN" MODEL="$MODEL" \
   bun run src/index.ts >"$RUN_DIR/launch.log" 2>&1 &
 PID=$!
 echo "$PID" >"$RUN_DIR/pid"
@@ -58,6 +59,27 @@ if [[ "$READY" -ne 1 ]]; then
   echo "error: timed out waiting for :${PORT}; see $RUN_DIR/launch.log" >&2
   kill "$PID" 2>/dev/null || true
   exit 1
+fi
+
+# bun may re-exec into bun.exe; record the PID that actually listens on PORT for cleanup.
+resolve_listen_pid() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp 2>/dev/null | awk -v p=":${port}" '
+      index($0, p) {
+        if (match($0, /pid=[0-9]+/)) {
+          s = substr($0, RSTART+4, RLENGTH-4)
+          print s
+          exit
+        }
+      }'
+  fi
+}
+LISTEN_PID="$(resolve_listen_pid "$PORT" || true)"
+if [[ -n "${LISTEN_PID:-}" ]]; then
+  echo "$LISTEN_PID" >"$RUN_DIR/pid"
+  echo "$PID" >"$RUN_DIR/launcher_pid"
+  PID="$LISTEN_PID"
 fi
 
 echo "launched run_id=$RUN_ID pid=$PID port=$PORT base=http://127.0.0.1:${PORT}"

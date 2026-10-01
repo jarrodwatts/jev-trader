@@ -26,7 +26,7 @@ What it does:
 1. Creates `.env` from `.env.example` if missing (verification scaffolding).
 2. Runs `bun install` if `node_modules` is absent.
 3. Starts `PORT=$PORT DRY_RUN=true MODEL=mock bun run start` in the background.
-4. Writes `/tmp/jev-trader-verify-$RUN_ID/{pid,port,base_url,launch.log,run_id,repo_root}`.
+4. Writes `/tmp/jev-trader-verify-$RUN_ID/{pid,port,base_url,launch.log,run_id,repo_root}` (`pid` is the listener on `PORT` once ready; `launcher_pid` may also be present when bun re-execs).
 5. Waits until stdout contains `jev-trader ·` and `GET http://127.0.0.1:$PORT/` returns JSON with `startedAt`.
 
 **Readiness signal:** log line `jev-trader · model=… · DRY RUN · … · :$PORT` plus HTTP 200 JSON from `/`.
@@ -109,7 +109,7 @@ Standards:
 .cursor/skills/verify-jev-trader/scripts/cleanup.sh "$RUN_ID"
 ```
 
-Kills **only** the PID recorded at launch, removes `/tmp/jev-trader-verify-$RUN_ID`, and **leaves** `.cursor/skills/verify-jev-trader/artifacts/` intact. Never `pkill -f jev-trader` / `killall bun`. After cleanup, confirm evidence files still exist at the paths you wrote.
+Kills the PID recorded at launch (the process listening on the verify `PORT` after bun may re-exec), any recorded launcher wrapper PID, and — only if that PORT still has a listener — that leftover listener. Removes `/tmp/jev-trader-verify-$RUN_ID`, and **leaves** `.cursor/skills/verify-jev-trader/artifacts/` intact. Never `pkill -f jev-trader` / `killall bun`. After cleanup, confirm evidence files still exist at the paths you wrote and `GET :$PORT/` fails.
 
 Does not remove `.env`, `node_modules`, or `data/events.jsonl`.
 
@@ -123,7 +123,7 @@ All under `.cursor/skills/verify-jev-trader/scripts/` (executable):
 | `doctor.sh` | `.cursor/skills/verify-jev-trader/scripts/doctor.sh [RUN_ID]` | Read-only "worth driving?" check |
 | `drive-get.sh` | `.cursor/skills/verify-jev-trader/scripts/drive-get.sh <path> <out.json> [RUN_ID]` | GET path → evidence JSON file |
 | `capture-sse.sh` | `.cursor/skills/verify-jev-trader/scripts/capture-sse.sh <sec> <out.sse.txt> [RUN_ID]` | Capture `/events` SSE for N seconds |
-| `cleanup.sh` | `.cursor/skills/verify-jev-trader/scripts/cleanup.sh [RUN_ID]` | Stop launched PID; keep artifacts |
+| `cleanup.sh` | `.cursor/skills/verify-jev-trader/scripts/cleanup.sh [RUN_ID]` | Stop listener/launcher PIDs (+ leftover on PORT); keep artifacts |
 
 ## Isolate
 

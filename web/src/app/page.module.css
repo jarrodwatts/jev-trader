@@ -21,13 +21,15 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+  gap: 12px;
+  overflow-y: auto;
 }
 
 /* the FlowChart root is width/height 100% of this box */
 .chartWrap {
   flex: 1;
   min-width: 0;
-  min-height: 0;
+  min-height: 220px;
   display: flex;
   flex-direction: column;
 }
@@ -64,11 +66,13 @@
 
   .left {
     flex: none;
+    overflow-y: visible;
   }
 
   /* no viewport-driven height down here, so give the chart a shape */
   .chartWrap {
     flex: none;
+    min-height: 0;
     aspect-ratio: 4 / 3;
   }
 

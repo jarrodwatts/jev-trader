@@ -8,7 +8,7 @@ one AI trade decision every Monad block.
 ```bash
 export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 bun install
-bun run dev      # http://localhost:3000
+bun run dev      # http://localhost:3001
 bun run build
 ```
 
@@ -17,7 +17,7 @@ Use Bun only — npm is broken on this machine.
 ## Config
 
 Copy `.env.example` to `.env.local`. `NEXT_PUBLIC_API_URL` points at the backend
-(default `https://jev-trader-production.up.railway.app`); the app opens an
+(default `http://127.0.0.1:3000`); the app opens an
 EventSource on `$NEXT_PUBLIC_API_URL/events`.
 
 ## Layout
@@ -27,5 +27,5 @@ EventSource on `$NEXT_PUBLIC_API_URL/events`.
   window, 1s→10s reconnect backoff, `connection` state, `avgLatencyMs`
 - `src/lib/useUptime.ts` — `useUptime(startedAt)` → ticking `"hh:mm:ss"`
 - `src/lib/format.ts` — number/address/tx formatting
-- `src/app/globals.css` — design tokens, `pulse`/`breathe` keyframes, `.card`
+- `src/app/globals.css` — design tokens, static status indicators, `.card`
 - `src/components/<Name>/<Name>.tsx` — UI components (one folder each)

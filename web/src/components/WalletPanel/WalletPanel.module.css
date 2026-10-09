@@ -1,0 +1,232 @@
+.panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel, #111315);
+  color: var(--ink);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.description {
+  margin: 5px 0 0;
+  color: var(--muted-2);
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.badge {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted-2);
+  font-family: var(--font-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.content {
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px 16px;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  color: var(--ink-2);
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.statusDotConnected {
+  background: var(--buy-ink, #74c69d);
+}
+
+.details,
+.balances {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.details {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.detailRow,
+.balanceRow,
+.blockRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.detailRow dt,
+.balanceRow dt,
+.blockRow dt {
+  color: var(--muted-2);
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+  font-size: 11px;
+}
+
+.detailRow dd,
+.balanceRow dd,
+.blockRow dd {
+  max-width: 68%;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.balances {
+  gap: 9px;
+  padding-top: 1px;
+}
+
+.balanceRow dd {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.blockRow {
+  padding-top: 3px;
+}
+
+.blockRow dt,
+.blockRow dd {
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.note,
+.error,
+.footer {
+  margin: 0;
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.note,
+.footer {
+  color: var(--muted-2);
+}
+
+.error {
+  color: var(--sell-ink, #df8b84);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryButton,
+.secondaryButton,
+.textButton {
+  min-height: 34px;
+  border-radius: 6px;
+  padding: 7px 11px;
+  font: 500 11px/1.2 var(--font-sans), Inter, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid var(--ink-2);
+  background: var(--ink);
+  color: var(--bg, #111315);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+}
+
+.textButton {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+.primaryButton:hover:not(:disabled),
+.secondaryButton:hover:not(:disabled),
+.textButton:hover:not(:disabled) {
+  border-color: var(--ink-2);
+}
+
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.textButton:focus-visible {
+  outline: 2px solid var(--buy-ink, #74c69d);
+  outline-offset: 2px;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.textButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 480px) {
+  .header,
+  .content {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .actions {
+    align-items: stretch;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    flex: 1 1 130px;
+  }
+
+  .textButton {
+    flex: 1 1 100%;
+    text-align: left;
+  }
+}

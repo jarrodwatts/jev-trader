@@ -10,6 +10,8 @@ One decision every Monad block. A TypeSafe Jev model watches the Kuru MON-USDC o
 
 With no `PRIVATE_KEY` it dry-runs: real book, real decisions, simulated fills. Set `MODEL=jev` and `TYPESAFE_AI_API_KEY` to use Jev; the default `mock` is a momentum heuristic stand-in.
 
+Every block event is also appended to `data/events.jsonl`: a bounded local archive for post-run analysis (nothing in the repo reads it; `/history` and the SSE stream serve the capped in-memory window). When the file would pass `EVENTS_MAX_BYTES` (default 100 MiB) it rotates to `events.jsonl.1`, so disk use stays at twice the cap. `EVENTS_LOG=false` keeps the file off entirely.
+
 ## Endpoints
 
 Deployed (dry run, mock model): https://jev-trader-production.up.railway.app
@@ -48,6 +50,7 @@ Live sends are fired and forgotten, so the `block` event carries the **intent**:
 ## Layout
 
     src/config.ts   env
+    src/evlog.ts    bounded, append-only data/events.jsonl archive (EVENTS_LOG, EVENTS_MAX_BYTES)
     src/chain.ts    block feed (WebSocket newHeads + polling backstop, newest block only), raw RPC
     src/book.ts     one-eth_call order book reader (decodes getL2Book, merges the AMM vault)
     src/market.ts   Kuru: read book, hand-encoded batchUpdate (cancel + post-only place), margin deposits, local nonce, async confirmation

@@ -1,5 +1,5 @@
-import { appendFileSync, mkdirSync } from "node:fs";
 import { config } from "./config";
+import { EventLog } from "./evlog";
 import { Market, type Book, type Fill, type Quote, type QuoteResult, type Side } from "./market";
 import type { Action, Decision, Model, TradeState } from "./model";
 import { TradeFeed, type MakerFill, type TradePrint } from "./trades";
@@ -64,6 +64,7 @@ export class Trader {
   /** Live quotes sent but not yet confirmed; they may become resting orders, so they count toward the cap. */
   private inflight = new Map<string, Quote>();
   private simId = 0;
+  private eventLog: EventLog;
   private position = { mon: 0, costUsd: 0 }; // signed inventory and its cost basis
   private totals: Totals = { blocks: 0, decisions: 0, quotes: 0, fills: 0, reverted: 0, lateBlocks: 0, jevUsd: 0, gasMon: 0, gasUsd: 0, realizedUsd: 0, pnlUsd: 0, pnlMon: 0, pnlPct: 0 };
 
@@ -74,7 +75,7 @@ export class Trader {
     private onFill: (block: number, fill: Fill) => void = () => {},
     private onQuote: (block: number, quote: Quote) => void = () => {},
   ) {
-    mkdirSync("data", { recursive: true });
+    this.eventLog = new EventLog();
   }
 
   /** Call once the market params are known. Without it `trades` in the state is all zeros and no fills are ever seen. */
@@ -288,7 +289,7 @@ export class Trader {
     };
     this.history.push(event);
     if (this.history.length > config.historySize) this.history.shift();
-    appendFileSync("data/events.jsonl", JSON.stringify(event) + "\n");
+    this.eventLog.append(JSON.stringify(event));
     this.onEvent(event, timing);
   }
 }

@@ -33,4 +33,8 @@ export const config = {
   jevUsdPerMTok: 0.042,
   port: Number(env("PORT", "3000")),
   historySize: 1000,
+  // The per-block event archive: EVENTS_LOG=false keeps the file off entirely.
+  eventLogEnabled: env("EVENTS_LOG") !== "false",
+  // Rotate data/events.jsonl to .1 when an append would pass this (disk stays at twice the cap).
+  eventLogMaxBytes: Number(env("EVENTS_MAX_BYTES", "104857600")),
 };

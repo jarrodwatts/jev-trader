@@ -112,7 +112,10 @@ export class Trader {
       let quote: Quote | null = null;
       if (side) {
         decision.action = side;
-        const cancel = [...this.orders.keys()].filter((id) => id > 0); // simulated orders have negative ids
+        // Simulated orders have negative ids. Skip ids an unconfirmed send already cancels: Kuru deletes a
+        // cancelled order, so cancelling it again fails the owner check and reverts the whole batchUpdate.
+        const cancelling = new Set([...this.inflight.values()].flatMap((q) => q.cancel));
+        const cancel = [...this.orders.keys()].filter((id) => id > 0 && !cancelling.has(id));
         quote = await this.market.send(block, side, config.tradeSizeMon, book, cancel, side !== wanted);
         this.totals.quotes++;
         if (quote.status === "sim") {
